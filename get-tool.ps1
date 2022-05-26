@@ -13,9 +13,10 @@ ${TOOLS} = @(
   "python",
   "node",
   "ruby",
-  "go"
+  "go",
+  "pypy"
 )
-${VERSION} = "v0.2.0"
+${VERSION} = "v0.2.1"
 ${HELP} = @"
 Usage:
 get-tool self-install                 - update get-tool to latest version
@@ -341,6 +342,48 @@ function GetGo {
   return (${binaries} | Sort-Object -Property "version")
 }
 
+function GetPyPy {
+  param (
+    ${Version}
+  )
+  ${uri} = "https://downloads.python.org/pypy/"
+  ${response} = $null
+  if (${DEBUG}) {
+    Write-Host "[DEBUG] GET ${uri}"
+  }
+  try {
+    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri}
+  }
+  catch {
+    Write-Host "[ERROR] GET ${uri}:"
+    Write-Host $_
+    exit
+  }
+  ${hrefs} = (${response}.Links | Where-Object -Property "href" -ne $null | Select-Object -ExpandProperty "href" | Where-Object -FilterScript { ($_ -clike "*-win64.zip") -and ($_ -cnotlike "*rc*") -and ($_ -cnotlike "*beta*") -and (($_ -creplace "v", "") -clike "pypy${Version}*") })
+  ${binaries} = @()
+  foreach (${href} in ${hrefs}) {
+    ${unpack_prefix_filter} = ${href}.SubString(0, ${href}.Length - 4) # NOTE: drop '.zip'
+    ${temp} = ${unpack_prefix_filter}.SubString(4) # NOTE: drop 'pypy'
+    ${temp} = ${temp}.SubString(0, ${temp}.Length - 6) # NOTE: drop '-win64'
+    ${index} = ${temp}.IndexOf("-")
+    ${_version_python} = ${temp}.SubString(0, ${index})
+    ${_version_pypy} = ${temp}.SubString(${index} + 2)
+    ${version_python} = [version]${_version_python}
+    ${version_pypy} = [version]${_version_pypy}
+    ${install_folder_name} = "pypy-${_version_python}-${_version_pypy}"
+    ${binaries} += [pscustomobject]@{
+      "url"                  = "${uri}${href}"
+      "package_type"         = "zip"
+      "unpack_prefix_filter" = ${unpack_prefix_filter}
+      "archive_file_name"    = ${href}
+      "install_folder_name"  = ${install_folder_name}
+      "version_python"       = ${version_python}
+      "version_pypy"         = ${version_pypy}
+    }
+  }
+  return (${binaries} | Sort-Object -Property ("version_python", "version_pypy"))
+}
+
 function Install {
   param (
     ${Tool},
@@ -456,6 +499,11 @@ switch (${args}[0]) {
       ${TOOLS}[4] {
         ${objects} = (GetPython -Version ${version})
         Install -Tool ${tool} -Executable "python.exe" -Arguments "--version" -Objects ${objects}
+        ${link} = (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[8])
+        if (Test-Path -PathType "Container" -Path ${link}) {
+          Remove-Item -Force -Path ${link}
+          Write-Host ("[DEBUG] Resolved conflict with " + ${TOOLS}[8])
+        }
       }
       ${TOOLS}[5] {
         ${objects} = (GetNode -Version ${version})
@@ -468,6 +516,15 @@ switch (${args}[0]) {
       ${TOOLS}[7] {
         ${objects} = (GetGo -Version ${version})
         Install -Tool ${tool} -Executable (Join-Path -Path "bin" -ChildPath "go.exe") -Arguments "version" -Objects ${objects}
+      }
+      ${TOOLS}[8] {
+        ${objects} = (GetPypy -Version ${version})
+        Install -Tool ${tool} -Executable "pypy.exe" -Arguments "--version" -Objects ${objects}
+        ${link} = (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[4])
+        if (Test-Path -PathType "Container" -Path ${link}) {
+          Remove-Item -Force -Path ${link}
+          Write-Host ("[DEBUG] Resolved conflict with " + ${TOOLS}[4])
+        }
       }
       default {
         Write-Host "[ERROR] Unsupported or missing tool argument."
@@ -509,6 +566,10 @@ switch (${args}[0]) {
         ${objects} = (GetGo)
         ListSupported -Objects ${objects}
       }
+      ${TOOLS}[8] {
+        ${objects} = (GetPyPy)
+        ListSupported -Objects ${objects}
+      }
       default {
         Write-Host (${TOOLS} -join "`n")
       }
@@ -528,6 +589,7 @@ switch (${args}[0]) {
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[5]))
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[6] -AdditionalChildPath "bin"))
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[7] -AdditionalChildPath "bin"))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[8]))
     }
   }
   { $_ -in "setup" } {
