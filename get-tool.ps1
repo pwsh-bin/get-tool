@@ -1,10 +1,26 @@
 Set-Variable -Name "ProgressPreference" -Value "SilentlyContinue"
 
-${DEBUG} = Test-Path -PathType "Container" -Path (Join-Path -Path ${PSScriptRoot} -ChildPath ".git")
-${PS1_HOME} = Join-Path -Path ${HOME} -ChildPath ".get-tool"
-${PS1_FILE} = Join-Path -Path ${PS1_HOME} -ChildPath "get-tool.ps1"
-${STORE_PATH} = Join-Path -Path ${PS1_HOME} -ChildPath ".store"
-${7ZIP} = Join-Path -Path ${ENV:PROGRAMFILES} -ChildPath "7-Zip" -AdditionalChildPath "7z.exe"
+${DEBUG} = (Test-Path -PathType "Container" -Path (Join-Path -Path ${PSScriptRoot} -ChildPath ".git"))
+${PS1_HOME} = (Join-Path -Path ${HOME} -ChildPath ".get-tool")
+${PS1_FILE} = (Join-Path -Path ${PS1_HOME} -ChildPath "get-tool.ps1")
+${GITHUB_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".github")
+${STORE_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".store")
+${7ZIP} = (Join-Path -Path ${ENV:PROGRAMFILES} -ChildPath (Join-Path -Path "7-Zip" -ChildPath "7z.exe"))
+${PER_PAGE} = 1000
+${VERSION} = "v0.3.0"
+${HELP} = @"
+Usage:
+get-tool self-install                 - update get-tool to latest version
+get-tool install java@openjdk-1.8     - install java openjdk version 1.8
+get-tool install maven@3.1            - install maven version 3.1
+get-tool list-supported java          - list all supported java versions
+get-tool list-supported               - list all supported tools
+get-tool list-installed               - list all installed tools
+get-tool init                         - add tools to current path
+get-tool setup                        - add init to current profile
+
+${VERSION}
+"@
 ${TOOLS} = @(
   "java",
   "maven",
@@ -14,26 +30,16 @@ ${TOOLS} = @(
   "node",
   "ruby",
   "go",
-  "pypy"
+  "pypy",
+  "cmake",
+  "binaryen",
+  "wasmedge",
+  "wasmer"
 )
-${VERSION} = "v0.2.1"
-${HELP} = @"
-Usage:
-get-tool self-install                 - update get-tool to latest version
-get-tool install java@openjdk-1.8     - install java openjdk version 1.8
-get-tool install maven@3.1            - install maven version 3.1
-get-tool list-supported               - list all supported tools
-get-tool list-supported java          - list all supported java versions
-get-tool list-installed               - list all installed tools
-get-tool init                         - add tools to current path
-get-tool setup                        - add init to current profile
-
-${VERSION}
-"@
 
 if (${args}.Count -eq 0) {
   Write-Host ${HELP}
-  return
+  exit
 }
 
 function GetJDKS {
@@ -46,7 +52,7 @@ function GetJDKS {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${jdks} = Invoke-RestMethod -Method "Get" -Uri ${uri}
+    ${jdks} = (Invoke-RestMethod -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -66,12 +72,12 @@ function GetMaven {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri} -Body @{
-      "C" = "N"
-      "O" = "D"
-      "F" = "0"
-      "P" = "${Version}*"
-    }
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri} -Body @{
+        "C" = "N"
+        "O" = "D"
+        "F" = "0"
+        "P" = "${Version}*"
+      })
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -108,12 +114,12 @@ function GetAnt {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri} -Body @{
-      "C" = "N"
-      "O" = "D"
-      "F" = "0"
-      "P" = "*-${Version}*-bin.zip"
-    }
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri} -Body @{
+        "C" = "N"
+        "O" = "D"
+        "F" = "0"
+        "P" = "*-${Version}*-bin.zip"
+      })
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -148,7 +154,7 @@ function GetGradle {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri}
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -183,7 +189,7 @@ function GetPython {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri}
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -218,7 +224,7 @@ function GetPython {
     Write-Host "[DEBUG] HEAD ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Head" -Uri ${uri}
+    ${response} = (Invoke-WebRequest -Method "Head" -Uri ${uri})
   }
   catch {
     return ${result}[0..(${result}.Count - 2)]
@@ -236,7 +242,7 @@ function GetNode {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri}
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -277,7 +283,7 @@ function GetRuby {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri}
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -290,7 +296,7 @@ function GetRuby {
     ${archive_file_name} = ${href}.SubString(${href}.LastIndexOf("/") + 1)
     ${unpack_prefix_filter} = ${archive_file_name}.SubString(0, ${archive_file_name}.Length - 3) # NOTE: drop '.7z'
     ${temp} = ${archive_file_name}.SubString(${archive_file_name}.IndexOf("-") + 1)
-    ${_version} = (${temp}.SubString(0, ${temp}.Length - 7) -creplace '-', '.')  # NOTE: drop '-x64.7z'
+    ${_version} = (${temp}.SubString(0, ${temp}.Length - 7) -creplace "-", ".")  # NOTE: drop '-x64.7z'
     ${version} = [version]${_version}
     ${install_folder_name} = "ruby-${_version}"
     ${binaries} += [pscustomobject]@{
@@ -315,7 +321,7 @@ function GetGo {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri}
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -352,7 +358,7 @@ function GetPyPy {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = Invoke-WebRequest -Method "Get" -Uri ${uri}
+    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
@@ -382,6 +388,177 @@ function GetPyPy {
     }
   }
   return (${binaries} | Sort-Object -Property ("version_python", "version_pypy"))
+}
+
+# NOTE: common
+function GetGitHubToken {
+  if (Test-Path -PathType "Leaf" -Path ${GITHUB_PATH}) {
+    return (Import-Clixml -Path ${GITHUB_PATH})
+  }
+  Write-Host "Generate GitHub API Token w/o expiration and any scope: https://github.com/settings/tokens/new"
+  Write-Host "Paste GitHub API Token:"
+  ${token} = (Read-Host -AsSecureString)
+  Export-Clixml -InputObject ${token} -Path ${GITHUB_PATH}
+  return ${token}
+}
+
+# NOTE: common
+function GetGitHubTagNamesFromReleases {
+  param (
+    ${RepositoryUri},
+    ${Token},
+    ${Pattern}
+  )
+  ${page} = 0
+  ${uri} = "${RepositoryUri}/releases"
+  while ($true) {
+    ${page} += 1
+    ${releases} = $null
+    if (${DEBUG}) {
+      Write-Host "[DEBUG] GET ${uri}"
+    }
+    try {
+      ${releases} = (Invoke-RestMethod -Method "Get" -Uri ${uri} -Authentication "Bearer" -Token ${Token} -Body @{
+          "per_page" = ${PER_PAGE}
+          "page"     = ${page}
+        })
+    }
+    catch {
+      Write-Host "[ERROR] GET ${uri}:"
+      Write-Host $_
+      exit
+    }
+    if (${releases}.Length -eq 0) {
+      return $null
+    }
+    ${result} = (${releases} | Where-Object -FilterScript { ($_.prerelease -eq $false) -and ($_.tag_name -cmatch ${Pattern}) } | Select-Object -ExpandProperty "tag_name")
+    if (${result}.Length -ne 0) {
+      return ${result}
+    }
+  }
+}
+
+# NOTE: common
+function GetGitHubTagNamesFromTags {
+  param (
+    ${RepositoryUri},
+    ${Token},
+    ${Pattern}
+  )
+  ${uri} = "${RepositoryUri}/tags"
+  ${page} = 0
+  while ($true) {
+    ${page} += 1
+    ${tags} = $null
+    if (${DEBUG}) {
+      Write-Host "[DEBUG] GET ${uri}"
+    }
+    try {
+      ${tags} = (Invoke-RestMethod -Method "Get" -Uri ${uri} -Authentication "Bearer" -Token ${Token} -Body @{
+          "per_page" = ${PER_PAGE}
+          "page"     = ${page}
+        })
+    }
+    catch {
+      Write-Host "[ERROR] GET ${uri}:"
+      Write-Host $_
+      exit
+    }
+    if (${tags}.Length -eq 0) {
+      return $null
+    }
+    ${result} = (${tags} | Where-Object -Property "name" -cmatch ${Pattern} | Select-Object -ExpandProperty "name")
+    if (${result}.Length -ne 0) {
+      return ${result}
+    }
+  }
+}
+
+# NOTE: common
+function GetGitHubTagNames {
+  param (
+    ${Repository},
+    ${VersionPrefix},
+    ${Version}
+  )
+  ${repository_uri} = "https://api.github.com/repos/${Repository}"
+  ${token} = (GetGitHubToken)
+  ${tag_names} = $null
+  if ($null -eq ${Version}) {
+    ${tag_names} = (GetGitHubTagNamesFromReleases -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}[-TZ\.\d]*$")
+    if ($null -eq ${tag_names}) {
+      ${tag_names} = (GetGitHubTagNamesFromTags -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}[-TZ\.\d]*$")
+    }
+  }
+  else {
+    ${tag_names} = (GetGitHubTagNamesFromTags -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}${Version}[-TZ\.\d]*$")
+  }
+  return ${tag_names}
+}
+
+function GetFromGitHub {
+  param (
+    ${Tool},
+    ${Repository},
+    ${VersionPrefix},
+    ${UnpackPrefix},
+    ${Uri},
+    ${PackageType},
+    ${Version}
+  )
+  ${tag_names} = (GetGitHubTagNames -Repository ${Repository} -VersionPrefix ${VersionPrefix} -Version ${Version})
+  ${binaries} = @()
+  foreach (${tag_name} in ${tag_names}) {
+    ${_version} = (${tag_name} -creplace ${VersionPrefix}, "")
+    ${version} = $null
+    if (${_version}.Contains(".")) {
+      ${version} = [version]${_version}
+    }
+    else {
+      ${version} = [convert]::ToInt32(${_version}, 10)
+    }
+    ${url} = (${Uri} -creplace "%version%", ${_version})
+    ${unpack_prefix_filter} = (${UnpackPrefix} -creplace "%version%", ${_version})
+    ${archive_file_name} = ${url}.SubString(${url}.LastIndexOf("/") + 1)
+    ${install_folder_name} = "${Tool}-${_version}"
+    ${binaries} += [pscustomobject]@{
+      "url"                  = ${url}
+      "package_type"         = ${PackageType}
+      "unpack_prefix_filter" = ${unpack_prefix_filter}
+      "archive_file_name"    = ${archive_file_name}
+      "install_folder_name"  = ${install_folder_name}
+      "version"              = ${version}
+    }
+  }
+  return (${binaries} | Sort-Object -Property "version")
+}
+
+function GetCMake {
+  param (
+    ${Version}
+  )
+  return (GetFromGitHub -Tool ${TOOLS}[9] -Repository "Kitware/CMake" -VersionPrefix "v" -UnpackPrefix "cmake-%version%-windows-x86_64" -Uri "https://github.com/Kitware/CMake/releases/download/v%version%/cmake-%version%-windows-x86_64.zip" -PackageType "zip" -Version ${Version})
+}
+
+function GetBinaryen {
+  param (
+    ${Version}
+  )
+  return (GetFromGitHub -Tool ${TOOLS}[10] -Repository "WebAssembly/binaryen" -VersionPrefix "version_" -UnpackPrefix "binaryen-version_%version%" -Uri "https://github.com/WebAssembly/binaryen/releases/download/version_%version%/binaryen-version_%version%-x86_64-windows.tar.gz" -PackageType "targz" -Version ${Version})
+}
+
+function GetWasmEdge {
+  param (
+    ${Version}
+  )
+  return (GetFromGitHub -Tool ${TOOLS}[11] -Repository "WasmEdge/WasmEdge" -VersionPrefix "" -UnpackPrefix "WasmEdge-%version%-Windows" -Uri "https://github.com/WasmEdge/WasmEdge/releases/download/%version%/WasmEdge-%version%-windows.zip" -PackageType "zip" -Version ${Version})
+}
+
+function GetWasmer {
+  param (
+    ${Version}
+  )
+  return (GetFromGitHub -Tool ${TOOLS}[12] -Repository "wasmerio/wasmer" -VersionPrefix "" -UnpackPrefix "" -Uri "https://github.com/wasmerio/wasmer/releases/download/%version%/wasmer-windows-amd64.tar.gz" -PackageType "targz" -Version ${Version})
 }
 
 function Install {
@@ -418,13 +595,14 @@ function Install {
       Write-Host $_
       exit
     }
+    New-Item -Force -ItemType "Directory" -Path ${directory} | Out-Null
     switch (${package_type}) {
       "zip" {
         Expand-Archive -Force -Path ${outfile} -DestinationPath ${directory}
         break
       }
       "targz" {
-        ${command} = "tar --extract --file ${outfile} --directory ${directory}"
+        ${command} = "tar -x -f ${outfile} -C ${directory}"
         Invoke-Expression -Command ${command} | Out-Null
         break
       }
@@ -439,6 +617,7 @@ function Install {
     }
     Remove-Item -Force -Path ${outfile} | Out-Null
     if (-not (Test-Path -PathType "Container" -Path ${directory})) {
+      Remove-Item -Force -Path ${directory} | Out-Null
       Write-Host "[ERROR] Extraction failed."
       exit
     }
@@ -465,7 +644,7 @@ switch (${args}[0]) {
       Write-Host "[DEBUG] GET ${uri}"
     }
     try {
-      ${command} = Invoke-RestMethod -Method "Get" -Uri ${uri}
+      ${command} = (Invoke-RestMethod -Method "Get" -Uri ${uri})
     }
     catch {
       Write-Host "[ERROR] GET ${uri}:"
@@ -526,48 +705,80 @@ switch (${args}[0]) {
           Write-Host ("[DEBUG] Resolved conflict with " + ${TOOLS}[4])
         }
       }
+      ${TOOLS}[9] {
+        ${objects} = (GetCMake -Version ${version})
+        Install -Tool ${tool} -Executable (Join-Path -Path "bin" -ChildPath "cmake.exe") -Arguments "--version" -Objects ${objects}
+      }
+      ${TOOLS}[10] {
+        ${objects} = (GetBinaryen -Version ${version})
+        Install -Tool ${tool} -Executable (Join-Path -Path "bin" -ChildPath "wasm2js.exe") -Arguments "--version" -Objects ${objects}
+      }
+      ${TOOLS}[11] {
+        ${objects} = (GetWasmEdge -Version ${version})
+        Install -Tool ${tool} -Executable (Join-Path -Path "bin" -ChildPath "wasmedge.exe") -Arguments "--version" -Objects ${objects}
+      }
+      ${TOOLS}[12] {
+        ${objects} = (GetWasmer -Version ${version})
+        Install -Tool ${tool} -Executable (Join-Path -Path "bin" -ChildPath "wasmer.exe") -Arguments "--version" -Objects ${objects}
+      }
       default {
         Write-Host "[ERROR] Unsupported or missing tool argument."
       }
     }
   }
   { $_ -in "ls", "list-supported" } {
-    ${tool} = ${args}[1]
+    ${tool}, ${version} = (${args}[1] -csplit "@")
     switch (${tool}) {
       ${TOOLS}[0] {
-        ${objects} = (GetJDKS)
+        ${objects} = (GetJDKS -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[1] {
-        ${objects} = (GetMaven)
+        ${objects} = (GetMaven -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[2] {
-        ${objects} = (GetAnt)
+        ${objects} = (GetAnt -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[3] {
-        ${objects} = (GetGradle)
+        ${objects} = (GetGradle -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[4] {
-        ${objects} = (GetPython)
+        ${objects} = (GetPython -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[5] {
-        ${objects} = (GetNode)
+        ${objects} = (GetNode -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[6] {
-        ${objects} = (GetRuby)
+        ${objects} = (GetRuby -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[7] {
-        ${objects} = (GetGo)
+        ${objects} = (GetGo -Version ${version})
         ListSupported -Objects ${objects}
       }
       ${TOOLS}[8] {
-        ${objects} = (GetPyPy)
+        ${objects} = (GetPyPy -Version ${version})
+        ListSupported -Objects ${objects}
+      }
+      ${TOOLS}[9] {
+        ${objects} = (GetCMake -Version ${version})
+        ListSupported -Objects ${objects}
+      }
+      ${TOOLS}[10] {
+        ${objects} = (GetBinaryen -Version ${version})
+        ListSupported -Objects ${objects}
+      }
+      ${TOOLS}[11] {
+        ${objects} = (GetWasmEdge -Version ${version})
+        ListSupported -Objects ${objects}
+      }
+      ${TOOLS}[12] {
+        ${objects} = (GetWasmer -Version ${version})
         ListSupported -Objects ${objects}
       }
       default {
@@ -581,15 +792,19 @@ switch (${args}[0]) {
   { $_ -in "init" } {
     if (${env:PATH} -split ";" -cnotcontains ${PS1_HOME}) {
       ${env:PATH} += ";${PS1_HOME}"
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[0] -AdditionalChildPath "bin"))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[1] -AdditionalChildPath "bin"))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[2] -AdditionalChildPath "bin"))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[3] -AdditionalChildPath "bin"))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[0] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[1] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[2] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[3] -ChildPath "bin")))
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[4]))
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[5]))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[6] -AdditionalChildPath "bin"))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[7] -AdditionalChildPath "bin"))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[6] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[7] -ChildPath "bin")))
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[8]))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[9] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[10] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[11] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[12] -ChildPath "bin")))
     }
   }
   { $_ -in "setup" } {
