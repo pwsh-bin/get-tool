@@ -11,6 +11,7 @@
 .\get-tool.ps1 ls binaryen
 .\get-tool.ps1 ls wasmedge
 .\get-tool.ps1 ls wasmer
+.\get-tool.ps1 ls poppler
 
 .\get-tool.ps1 i java
 .\get-tool.ps1 i maven
@@ -25,6 +26,7 @@
 .\get-tool.ps1 i binaryen
 .\get-tool.ps1 i wasmedge
 .\get-tool.ps1 i wasmer
+.\get-tool.ps1 i poppler
 
 .\get-tool.ps1 i java@openjdk
 .\get-tool.ps1 i maven@3
@@ -39,3 +41,4 @@
 .\get-tool.ps1 i binaryen@108
 .\get-tool.ps1 i wasmedge@0
 .\get-tool.ps1 i wasmer@2
+.\get-tool.ps1 i poppler@21

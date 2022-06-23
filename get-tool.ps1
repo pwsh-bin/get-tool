@@ -7,7 +7,7 @@ ${GITHUB_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".github")
 ${STORE_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".store")
 ${7ZIP} = (Join-Path -Path ${ENV:PROGRAMFILES} -ChildPath (Join-Path -Path "7-Zip" -ChildPath "7z.exe"))
 ${PER_PAGE} = 1000
-${VERSION} = "v0.3.0"
+${VERSION} = "v0.3.1"
 ${HELP} = @"
 Usage:
 get-tool self-install                 - update get-tool to latest version
@@ -34,7 +34,8 @@ ${TOOLS} = @(
   "cmake",
   "binaryen",
   "wasmedge",
-  "wasmer"
+  "wasmer",
+  "poppler"
 )
 
 if (${args}.Count -eq 0) {
@@ -512,7 +513,12 @@ function GetFromGitHub {
     ${_version} = (${tag_name} -creplace ${VersionPrefix}, "")
     ${version} = $null
     if (${_version}.Contains(".")) {
-      ${version} = [version]${_version}
+      if (${_version}.Contains("-")) {
+        ${version} = [version](${_version} -creplace "-", ".")
+      }
+      else {
+        ${version} = [version]${_version}
+      }
     }
     else {
       ${version} = [convert]::ToInt32(${_version}, 10)
@@ -561,6 +567,13 @@ function GetWasmer {
   return (GetFromGitHub -Tool ${TOOLS}[12] -Repository "wasmerio/wasmer" -VersionPrefix "" -UnpackPrefix "" -Uri "https://github.com/wasmerio/wasmer/releases/download/%version%/wasmer-windows-amd64.tar.gz" -PackageType "targz" -Version ${Version})
 }
 
+function GetPoppler {
+  param (
+    ${Version}
+  )
+  return (GetFromGitHub -Tool ${TOOLS}[13] -Repository "oschwartz10612/poppler-windows" -VersionPrefix "v" -UnpackPrefix "poppler-*" -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v%version%/Release-%version%.zip" -PackageType "zip" -Version ${Version})
+}
+
 function Install {
   param (
     ${Tool},
@@ -580,8 +593,6 @@ function Install {
   ${install_folder_name} = ${object}.install_folder_name
   ${outfile} = (Join-Path -Path ${STORE_PATH} -ChildPath ${archive_file_name})
   ${directory} = (Join-Path -Path ${STORE_PATH} -ChildPath ${install_folder_name})
-  ${link} = (Join-Path -Path ${PS1_HOME} -ChildPath ${Tool})
-  ${target} = (Join-Path -Path ${directory} -ChildPath ${unpack_prefix_filter})
   if (-not (Test-Path -PathType "Container" -Path ${directory})) {
     New-Item -Force -ItemType "Directory" -Path ${STORE_PATH} | Out-Null
     if (${DEBUG}) {
@@ -622,8 +633,24 @@ function Install {
       exit
     }
   }
+  ${link} = (Join-Path -Path ${PS1_HOME} -ChildPath ${Tool})
   if (Test-Path -PathType "Container" -Path ${link}) {
     Remove-Item -Force -Path ${link}
+  }
+  ${target} = $null
+  if (${unpack_prefix_filter}.Length -eq 0) {
+    ${target} = ${directory}
+  }
+  else {
+    ${child_paths} = (Get-ChildItem -Path ${directory} -Filter ${unpack_prefix_filter} -Directory -Name)
+    ${child_path} = $null
+    if (${child_paths} -is [string]) {
+      ${child_path} = ${child_paths}
+    }
+    else {
+      ${child_path} = ${child_paths}[0]
+    }
+    ${target} = (Join-Path -Path ${directory} -ChildPath ${child_path})
   }
   New-Item -Force -ItemType "Junction" -Path ${link} -Target ${target} | Out-Null
   Invoke-Expression -Command ((Join-Path -Path ${link} -ChildPath ${Executable}) + " " + ${Arguments})
@@ -721,6 +748,10 @@ switch (${args}[0]) {
         ${objects} = (GetWasmer -Version ${version})
         Install -Tool ${tool} -Executable (Join-Path -Path "bin" -ChildPath "wasmer.exe") -Arguments "--version" -Objects ${objects}
       }
+      ${TOOLS}[13] {
+        ${objects} = (GetPoppler -Version ${version})
+        Install -Tool ${tool} -Executable (Join-Path -Path (Join-Path -Path "Library" -ChildPath "bin") -ChildPath "pdfinfo.exe") -Arguments "-v" -Objects ${objects}
+      }
       default {
         Write-Host "[ERROR] Unsupported or missing tool argument."
       }
@@ -781,6 +812,10 @@ switch (${args}[0]) {
         ${objects} = (GetWasmer -Version ${version})
         ListSupported -Objects ${objects}
       }
+      ${TOOLS}[13] {
+        ${objects} = (GetPoppler -Version ${version})
+        ListSupported -Objects ${objects}
+      }
       default {
         Write-Host (${TOOLS} -join "`n")
       }
@@ -805,6 +840,7 @@ switch (${args}[0]) {
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[10] -ChildPath "bin")))
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[11] -ChildPath "bin")))
       ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[12] -ChildPath "bin")))
+      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[13] -ChildPath (Join-Path -Path "Library" -ChildPath "bin"))))
     }
   }
   { $_ -in "setup" } {
