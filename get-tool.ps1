@@ -7,7 +7,7 @@ ${GITHUB_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".github")
 ${STORE_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".store")
 ${7ZIP} = (Join-Path -Path ${ENV:PROGRAMFILES} -ChildPath (Join-Path -Path "7-Zip" -ChildPath "7z.exe"))
 ${PER_PAGE} = 1000
-${VERSION} = "v0.3.1"
+${VERSION} = "v0.3.2"
 ${HELP} = @"
 Usage:
 get-tool self-install                 - update get-tool to latest version
@@ -38,8 +38,33 @@ ${TOOLS} = @(
   "poppler"
 )
 
+# NOTE: common
 if (${args}.Count -eq 0) {
   Write-Host ${HELP}
+  if ((${Env:Path} -split ";") -cnotcontains ${PS1_HOME}) {
+    Write-Host @"
+---------------------------------------------------------
+The script are not found in the current PATH, please run:
+> ${PS1_HOME} init
+---------------------------------------------------------
+"@
+  }
+  if (${PSVersionTable}.PSVersion.Major -lt 7) {
+    Write-Host @"
+-----------------------------------------------------------------
+The PowerShell Core is preferable to use this script, please run:
+> winget install Microsoft.PowerShell
+-----------------------------------------------------------------
+"@
+  }
+  if ((Get-ExecutionPolicy -Scope "LocalMachine") -ne "RemoteSigned") {
+    Write-Host @"
+-------------------------------------------------------------------------------
+The RemoteSigned execution policy is preferable to use this script, please run:
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
+-------------------------------------------------------------------------------
+"@
+  }
   exit
 }
 
@@ -396,8 +421,10 @@ function GetGitHubToken {
   if (Test-Path -PathType "Leaf" -Path ${GITHUB_PATH}) {
     return (Import-Clixml -Path ${GITHUB_PATH})
   }
-  Write-Host "Generate GitHub API Token w/o expiration and any scope: https://github.com/settings/tokens/new"
-  Write-Host "Paste GitHub API Token:"
+  Write-Host @"
+Generate GitHub API Token w/o expiration and public_repo scope: https://github.com/settings/tokens/new
+Enter GitHub API Token:
+"@
   ${token} = (Read-Host -AsSecureString)
   Export-Clixml -InputObject ${token} -Path ${GITHUB_PATH}
   return ${token}
@@ -419,7 +446,11 @@ function GetGitHubTagNamesFromReleases {
       Write-Host "[DEBUG] GET ${uri}"
     }
     try {
-      ${releases} = (Invoke-RestMethod -Method "Get" -Uri ${uri} -Authentication "Bearer" -Token ${Token} -Body @{
+      # NOTE: compat
+      ${headers} = @{
+        "Authentication" = ("Bearer " + ${Token})
+      }
+      ${releases} = (Invoke-RestMethod -Method "Get" -Uri ${uri} -Headers ${headers} -Body @{
           "per_page" = ${PER_PAGE}
           "page"     = ${page}
         })
@@ -455,7 +486,11 @@ function GetGitHubTagNamesFromTags {
       Write-Host "[DEBUG] GET ${uri}"
     }
     try {
-      ${tags} = (Invoke-RestMethod -Method "Get" -Uri ${uri} -Authentication "Bearer" -Token ${Token} -Body @{
+      # NOTE: compat
+      ${headers} = @{
+        "Authentication" = ("Bearer " + ${Token})
+      }
+      ${tags} = (Invoke-RestMethod -Method "Get" -Uri ${uri} -Headers ${headers} -Body @{
           "per_page" = ${PER_PAGE}
           "page"     = ${page}
         })
@@ -825,25 +860,27 @@ switch (${args}[0]) {
     Write-Host ((Get-ChildItem -Path ${STORE_PATH} -Filter ${Pattern} -Directory -Name) -join "`n")
   }
   { $_ -in "init" } {
-    if (${env:PATH} -split ";" -cnotcontains ${PS1_HOME}) {
-      ${env:PATH} += ";${PS1_HOME}"
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[0] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[1] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[2] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[3] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[4]))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[5]))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[6] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[7] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[8]))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[9] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[10] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[11] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[12] -ChildPath "bin")))
-      ${env:PATH} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[13] -ChildPath (Join-Path -Path "Library" -ChildPath "bin"))))
+    if ((${Env:Path} -split ";") -cnotcontains ${PS1_HOME}) {
+      ${Env:Path} += ";${PS1_HOME}"
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[0] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[1] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[2] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[3] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[4]))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[5]))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[6] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[7] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[8]))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[9] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[10] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[11] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[12] -ChildPath "bin")))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[13] -ChildPath (Join-Path -Path "Library" -ChildPath "bin"))))
     }
   }
+  # NOTE: common
   { $_ -in "setup" } {
+    New-Item -Force -ItemType "File" -Path ${PROFILE} | Out-Null
     ${value} = "& '${PS1_FILE}' init"
     if (((Get-Content -Path ${PROFILE}) -split "`n") -cnotcontains ${value}) {
       Add-Content -Path ${PROFILE} -Value ${value}
