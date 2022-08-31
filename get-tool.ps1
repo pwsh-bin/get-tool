@@ -7,7 +7,7 @@ ${GITHUB_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".github")
 ${STORE_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".store")
 ${7ZIP} = (Join-Path -Path ${ENV:PROGRAMFILES} -ChildPath (Join-Path -Path "7-Zip" -ChildPath "7z.exe"))
 ${PER_PAGE} = 1000
-${VERSION} = "v0.3.2"
+${VERSION} = "v0.3.3"
 ${HELP} = @"
 Usage:
 get-tool self-install                 - update get-tool to latest version
@@ -113,18 +113,14 @@ function GetMaven {
   ${hrefs} = (${response}.Links | Where-Object -Property "href" -ne $null | Select-Object -ExpandProperty "href" -Skip 1)
   ${binaries} = @()
   foreach (${href} in ${hrefs}) {
-    ${_version} = ${href}.SubString(0, ${href}.Length - 1)
-    ${version} = [version]${_version}
-    ${unpack_prefix_filter} = "apache-maven-${_version}"
-    ${archive_file_name} = "apache-maven-${_version}-bin.zip"
-    ${install_folder_name} = "maven-${_version}"
+    ${_version} = ${href}.SubString(0, ${href}.Length - 1) # NOTE: drop '/'
     ${binaries} += [pscustomobject]@{
       "url"                  = "${uri}${_version}/binaries/${archive_file_name}"
       "package_type"         = "zip"
-      "unpack_prefix_filter" = ${unpack_prefix_filter}
-      "archive_file_name"    = ${archive_file_name}
-      "install_folder_name"  = ${install_folder_name}
-      "version"              = ${version}
+      "unpack_prefix_filter" = "apache-maven-${_version}"
+      "archive_file_name"    = "apache-maven-${_version}-bin.zip"
+      "install_folder_name"  = "maven-${_version}"
+      "version"              = [version]${_version}
     }
   }
   return (${binaries} | Sort-Object -Property "version")
@@ -157,14 +153,13 @@ function GetAnt {
   foreach (${href} in ${hrefs}) {
     ${unpack_prefix_filter} = ${href}.SubString(0, ${href}.LastIndexOf("-"))
     ${install_folder_name} = ${unpack_prefix_filter}.SubString(${unpack_prefix_filter}.IndexOf("-") + 1)
-    ${version} = [version]${install_folder_name}.SubString(${install_folder_name}.IndexOf("-") + 1)
     ${binaries} += [pscustomobject]@{
       "url"                  = "${uri}${href}"
       "package_type"         = "zip"
       "unpack_prefix_filter" = ${unpack_prefix_filter}
       "archive_file_name"    = ${href}
       "install_folder_name"  = ${install_folder_name}
-      "version"              = ${version}
+      "version"              = [version]${install_folder_name}.SubString(${install_folder_name}.IndexOf("-") + 1)
     }
   }
   return (${binaries} | Sort-Object -Property "version")
@@ -174,32 +169,31 @@ function GetGradle {
   param (
     ${Version}
   )
-  ${uri} = "https://services.gradle.org/distributions/"
+  ${uri} = "https://services.gradle.org/versions/all"
   ${response} = $null
   if (${DEBUG}) {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
+    ${response} = (Invoke-RestMethod -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
     Write-Host $_
     exit
   }
-  ${hrefs} = (${response}.Links | Where-Object -Property "href" -ne $null | Select-Object -ExpandProperty "href" -Skip 1 | Where-Object -FilterScript { ($_ -cnotlike "*rc*") -and ($_ -cnotlike "*milestone*") -and ($_ -clike "*-${version}*-bin.zip") })
+  ${objects} = (${response} | Where-Object -FilterScript { ($_.snapshot -eq $false) -and ($_.nightly -eq $false) -and ($_.rcFor -eq "") -and ($_.milestoneFor -eq "") -and ($_.version -cnotlike "*-*") -and ($_.version -clike "${Version}*") })
   ${binaries} = @()
-  foreach (${href} in ${hrefs}) {
-    ${archive_file_name} = ${href}.SubString(${href}.LastIndexOf("/") + 1)
+  foreach (${object} in ${objects}) {
+    ${archive_file_name} = ${object}.downloadUrl.SubString(${object}.downloadUrl.LastIndexOf("/") + 1)
     ${install_folder_name} = ${archive_file_name}.SubString(0, ${archive_file_name}.LastIndexOf("-"))
-    ${version} = [version]${install_folder_name}.SubString(${install_folder_name}.IndexOf("-") + 1)
     ${binaries} += [pscustomobject]@{
-      "url"                  = "${uri}${archive_file_name}"
+      "url"                  = ${object}.downloadUrl
       "package_type"         = "zip"
       "unpack_prefix_filter" = ${install_folder_name}
       "archive_file_name"    = ${archive_file_name}
       "install_folder_name"  = ${install_folder_name}
-      "version"              = ${version}
+      "version"              = [version]${object}.version
     }
   }
   return (${binaries} | Sort-Object -Property "version")
@@ -232,13 +226,12 @@ function GetPython {
       continue
     }
     ${archive_file_name} = "python-${_version}-embed-amd64.zip"
-    ${install_folder_name} = "python-${_version}"
     ${binaries} += [pscustomobject]@{
       "url"                  = "${uri}${href}${archive_file_name}"
       "package_type"         = "zip"
       "unpack_prefix_filter" = ""
       "archive_file_name"    = ${archive_file_name}
-      "install_folder_name"  = ${install_folder_name}
+      "install_folder_name"  = "python-${_version}"
       "version"              = ${version}
     }
   }
@@ -262,38 +255,32 @@ function GetNode {
   param (
     ${Version}
   )
-  ${uri} = "https://nodejs.org/dist/"
+  ${uri} = "https://nodejs.org/dist/index.json"
   ${response} = $null
   if (${DEBUG}) {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
+    ${response} = (Invoke-RestMethod -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
     Write-Host $_
     exit
   }
-  ${hrefs} = (${response}.Links | Where-Object -Property "href" -ne $null | Select-Object -ExpandProperty "href" -Skip 1 | Where-Object -FilterScript { ($_ -clike "v*.*.*") -and ($_ -cnotlike "*-*") -and ($_ -clike "v${Version}*") })
+  ${objects} = (${response} | Where-Object -FilterScript { ($_.files -ccontains "win-x64-zip") -and ($_.version -clike "v${Version}*") })
   ${binaries} = @()
-  ${minimumVersion} = [version]"4.5.0"
-  foreach (${href} in ${hrefs}) {
-    ${_version} = ${href}.SubString(1, ${href}.Length - 2)
-    ${version} = [version]${_version}
-    if (${version} -lt ${minimumVersion}) {
-      continue
-    }
+  foreach (${object} in ${objects}) {
+    ${_version} = ${object}.version.SubString(1) # NOTE: drop 'v'
     ${unpack_prefix_filter} = "node-v${_version}-win-x64"
     ${archive_file_name} = "${unpack_prefix_filter}.zip"
-    ${install_folder_name} = "node-${_version}"
     ${binaries} += [pscustomobject]@{
-      "url"                  = "${uri}${href}${archive_file_name}"
+      "url"                  = "https://nodejs.org/dist/v${_version}/${archive_file_name}"
       "package_type"         = "zip"
       "unpack_prefix_filter" = ${unpack_prefix_filter}
       "archive_file_name"    = ${archive_file_name}
-      "install_folder_name"  = ${install_folder_name}
-      "version"              = ${version}
+      "install_folder_name"  = "node-${_version}"
+      "version"              = [version]${_version}
     }
   }
   return (${binaries} | Sort-Object -Property "version")
@@ -323,15 +310,13 @@ function GetRuby {
     ${unpack_prefix_filter} = ${archive_file_name}.SubString(0, ${archive_file_name}.Length - 3) # NOTE: drop '.7z'
     ${temp} = ${archive_file_name}.SubString(${archive_file_name}.IndexOf("-") + 1)
     ${_version} = (${temp}.SubString(0, ${temp}.Length - 7) -creplace "-", ".")  # NOTE: drop '-x64.7z'
-    ${version} = [version]${_version}
-    ${install_folder_name} = "ruby-${_version}"
     ${binaries} += [pscustomobject]@{
       "url"                  = ${href}
       "package_type"         = "7z"
       "unpack_prefix_filter" = ${unpack_prefix_filter}
       "archive_file_name"    = ${archive_file_name}
-      "install_folder_name"  = ${install_folder_name}
-      "version"              = ${version}
+      "install_folder_name"  = "ruby-${_version}"
+      "version"              = [version]${_version}
     }
   }
   return (${binaries} | Sort-Object -Property "version")
@@ -360,15 +345,13 @@ function GetGo {
     ${archive_file_name} = ${href}.SubString(${href}.LastIndexOf("/") + 1)
     ${temp} = ${archive_file_name}.SubString(2) # NOTE: drop 'go'
     ${_version} = ${temp}.SubString(0, ${temp}.Length - 18) # NOTE: drop '.windows-amd64.zip'
-    ${version} = [version]${_version}
-    ${install_folder_name} = "go-${_version}"
     ${binaries} += [pscustomobject]@{
       "url"                  = "${uri}${archive_file_name}"
       "package_type"         = "zip"
       "unpack_prefix_filter" = "go"
       "archive_file_name"    = ${archive_file_name}
-      "install_folder_name"  = ${install_folder_name}
-      "version"              = ${version}
+      "install_folder_name"  = "go-${_version}"
+      "version"              = [version]${_version}
     }
   }
   return (${binaries} | Sort-Object -Property "version")
@@ -378,39 +361,38 @@ function GetPyPy {
   param (
     ${Version}
   )
-  ${uri} = "https://downloads.python.org/pypy/"
+  ${uri} = "https://downloads.python.org/pypy/versions.json"
   ${response} = $null
   if (${DEBUG}) {
     Write-Host "[DEBUG] GET ${uri}"
   }
   try {
-    ${response} = (Invoke-WebRequest -Method "Get" -Uri ${uri})
+    ${response} = (Invoke-RestMethod -Method "Get" -Uri ${uri})
   }
   catch {
     Write-Host "[ERROR] GET ${uri}:"
     Write-Host $_
     exit
   }
-  ${hrefs} = (${response}.Links | Where-Object -Property "href" -ne $null | Select-Object -ExpandProperty "href" | Where-Object -FilterScript { ($_ -clike "*-win64.zip") -and ($_ -cnotlike "*rc*") -and ($_ -cnotlike "*beta*") -and (($_ -creplace "v", "") -clike "pypy${Version}*") })
+  ${python_version}, ${pypy_version} = (${Version} -csplit "-")
+  ${objects} = (${response} | Where-Object -FilterScript { ($_.stable -eq $true) -and ($_.python_version -clike "${python_version}*") -and ($_.pypy_version -clike "${pypy_version}*") })
   ${binaries} = @()
-  foreach (${href} in ${hrefs}) {
-    ${unpack_prefix_filter} = ${href}.SubString(0, ${href}.Length - 4) # NOTE: drop '.zip'
-    ${temp} = ${unpack_prefix_filter}.SubString(4) # NOTE: drop 'pypy'
-    ${temp} = ${temp}.SubString(0, ${temp}.Length - 6) # NOTE: drop '-win64'
-    ${index} = ${temp}.IndexOf("-")
-    ${_version_python} = ${temp}.SubString(0, ${index})
-    ${_version_pypy} = ${temp}.SubString(${index} + 2)
-    ${version_python} = [version]${_version_python}
-    ${version_pypy} = [version]${_version_pypy}
-    ${install_folder_name} = "pypy-${_version_python}-${_version_pypy}"
+  foreach (${object} in ${objects}) {
+    ${temp} = (${object}.files | Where-Object -FilterScript { ($_.arch -eq "x64") -and ($_.platform -eq "win64") })
+    if ($null -eq ${temp}) {
+      continue
+    }
+    ${_version_python} = ${object}.python_version
+    ${_version_pypy} = ${object}.pypy_version
+    ${archive_file_name} = ${temp}.filename
     ${binaries} += [pscustomobject]@{
-      "url"                  = "${uri}${href}"
+      "url"                  = ${temp}.download_url
       "package_type"         = "zip"
-      "unpack_prefix_filter" = ${unpack_prefix_filter}
-      "archive_file_name"    = ${href}
-      "install_folder_name"  = ${install_folder_name}
-      "version_python"       = ${version_python}
-      "version_pypy"         = ${version_pypy}
+      "unpack_prefix_filter" = ${archive_file_name}.SubString(0, ${archive_file_name}.Length - 4) # NOTE: drop '.zip'
+      "archive_file_name"    = ${archive_file_name}
+      "install_folder_name"  = "pypy-${_version_python}-${_version_pypy}"
+      "version_python"       = [version]${_version_python}
+      "version_pypy"         = [version]${_version_pypy}
     }
   }
   return (${binaries} | Sort-Object -Property ("version_python", "version_pypy"))
@@ -435,7 +417,8 @@ function GetGitHubTagNamesFromReleases {
   param (
     ${RepositoryUri},
     ${Token},
-    ${Pattern}
+    ${Pattern},
+    ${Prerelease}
   )
   ${page} = 0
   ${uri} = "${RepositoryUri}/releases"
@@ -463,7 +446,7 @@ function GetGitHubTagNamesFromReleases {
     if (${releases}.Length -eq 0) {
       return $null
     }
-    ${result} = (${releases} | Where-Object -FilterScript { ($_.prerelease -eq $false) -and ($_.tag_name -cmatch ${Pattern}) } | Select-Object -ExpandProperty "tag_name")
+    ${result} = (${releases} | Where-Object -FilterScript { ($_.prerelease -eq ${Prerelease}) -and ($_.tag_name -cmatch ${Pattern}) } | Select-Object -ExpandProperty "tag_name")
     if (${result}.Length -ne 0) {
       return ${result}
     }
@@ -521,9 +504,12 @@ function GetGitHubTagNames {
   ${token} = (GetGitHubToken)
   ${tag_names} = $null
   if ($null -eq ${Version}) {
-    ${tag_names} = (GetGitHubTagNamesFromReleases -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}[-TZ\.\d]*$")
+    ${tag_names} = (GetGitHubTagNamesFromReleases -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}.*$" -Prerelease $false)
     if ($null -eq ${tag_names}) {
-      ${tag_names} = (GetGitHubTagNamesFromTags -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}[-TZ\.\d]*$")
+      ${tag_names} = (GetGitHubTagNamesFromReleases -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}.*$" -Prerelease $true)
+      if ($null -eq ${tag_names}) {
+        ${tag_names} = (GetGitHubTagNamesFromTags -RepositoryUri ${repository_uri} -Token ${token} -Pattern "^${VersionPrefix}[-TZ\.\d]*$")
+      }
     }
   }
   else {
@@ -559,15 +545,12 @@ function GetFromGitHub {
       ${version} = [convert]::ToInt32(${_version}, 10)
     }
     ${url} = (${Uri} -creplace "%version%", ${_version})
-    ${unpack_prefix_filter} = (${UnpackPrefix} -creplace "%version%", ${_version})
-    ${archive_file_name} = ${url}.SubString(${url}.LastIndexOf("/") + 1)
-    ${install_folder_name} = "${Tool}-${_version}"
     ${binaries} += [pscustomobject]@{
       "url"                  = ${url}
       "package_type"         = ${PackageType}
-      "unpack_prefix_filter" = ${unpack_prefix_filter}
-      "archive_file_name"    = ${archive_file_name}
-      "install_folder_name"  = ${install_folder_name}
+      "unpack_prefix_filter" = (${UnpackPrefix} -creplace "%version%", ${_version})
+      "archive_file_name"    = ${url}.SubString(${url}.LastIndexOf("/") + 1)
+      "install_folder_name"  = "${Tool}-${_version}"
       "version"              = ${version}
     }
   }
