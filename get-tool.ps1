@@ -7,7 +7,7 @@ ${GITHUB_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".github")
 ${STORE_PATH} = (Join-Path -Path ${PS1_HOME} -ChildPath ".store")
 ${7ZIP} = (Join-Path -Path ${ENV:PROGRAMFILES} -ChildPath (Join-Path -Path "7-Zip" -ChildPath "7z.exe"))
 ${PER_PAGE} = 1000
-${VERSION} = "v0.3.3"
+${VERSION} = "v0.3.4"
 ${HELP} = @"
 Usage:
 get-tool self-install                 - update get-tool to latest version
@@ -203,7 +203,7 @@ function GetPython {
   param (
     ${Version}
   )
-  ${uri} = "https://www.python.org/ftp/python/"
+  ${uri} = "https://www.python.org/downloads/windows/"
   ${response} = $null
   if (${DEBUG}) {
     Write-Host "[DEBUG] GET ${uri}"
@@ -216,39 +216,25 @@ function GetPython {
     Write-Host $_
     exit
   }
-  ${hrefs} = (${response}.Links | Where-Object -Property "href" -ne $null | Select-Object -ExpandProperty "href" -Skip 1 | Where-Object -FilterScript { ($_ -clike "*.*.*") -and ($_ -cnotlike "*-*") -and ($_ -clike "${Version}*") })
+  ${hrefs} = (${response}.Links | Where-Object -FilterScript { ($null -ne $_.href  ) -and ($_.href -clike "*/python-${Version}*-embed-amd64.zip") } | Select-Object -ExpandProperty "href")
   ${binaries} = @()
-  ${minimumVersion} = [version]"3.5.0"
   foreach (${href} in ${hrefs}) {
-    ${_version} = ${href}.SubString(0, ${href}.Length - 1)
-    ${version} = [version]${_version}
-    if (${version} -lt ${minimumVersion}) {
+    ${temp} = (${href} -csplit "/")
+    if ((${temp}[-1] -csplit "-")[1] -cmatch "[a-z]") {
       continue
     }
-    ${archive_file_name} = "python-${_version}-embed-amd64.zip"
+    ${_version} = ${temp}[5]
+    ${version} = [version]${_version}
     ${binaries} += [pscustomobject]@{
-      "url"                  = "${uri}${href}${archive_file_name}"
+      "url"                  = ${href}
       "package_type"         = "zip"
       "unpack_prefix_filter" = ""
-      "archive_file_name"    = ${archive_file_name}
+      "archive_file_name"    = ${temp}[-1]
       "install_folder_name"  = "python-${_version}"
       "version"              = ${version}
     }
   }
-  ${result} = (${binaries} | Sort-Object -Property "version")
-  # NOTE: check is last release is not a prerelease
-  ${uri} = ${result}[-1].url
-  ${response} = $null
-  if (${DEBUG}) {
-    Write-Host "[DEBUG] HEAD ${uri}"
-  }
-  try {
-    ${response} = (Invoke-WebRequest -Method "Head" -Uri ${uri})
-  }
-  catch {
-    return ${result}[0..(${result}.Count - 2)]
-  }
-  return ${result}
+  return (${binaries} | Sort-Object -Property "version")
 }
 
 function GetNode {
@@ -617,7 +603,7 @@ function Install {
       Write-Host "[DEBUG] GET ${uri}"
     }
     try {
-      Invoke-RestMethod -Method "Get" -Uri ${uri} -OutFile ${outfile}
+      Invoke-WebRequest -Method "Get" -Uri ${uri} -OutFile ${outfile}
     }
     catch {
       Write-Host "[ERROR] GET ${uri}:"
@@ -727,6 +713,27 @@ switch (${args}[0]) {
         if (Test-Path -PathType "Container" -Path ${link}) {
           Remove-Item -Force -Path ${link}
           Write-Host ("[DEBUG] Resolved conflict with " + ${TOOLS}[8])
+        }
+        ${root} = (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[4])
+        if (-not (Test-Path -PathType "Leaf" -Path (Join-Path -Path ${root} -ChildPath (Join-Path -Path "Scripts" -ChildPath "pip.exe")))) {
+          ${pth} = (Get-ChildItem -Path ${root} -Filter "*._pth" -File)[0]
+          Set-Content -Path ${pth} -Value ((Get-Content -Path ${pth}) -creplace '#import site', 'import site')
+          New-Item -Force -ItemType "Directory" -Path ${STORE_PATH} | Out-Null
+          ${uri} = "https://bootstrap.pypa.io/get-pip.py"
+          ${outfile} = (Join-Path -Path ${STORE_PATH} -ChildPath "get-pip.py")
+          if (${DEBUG}) {
+            Write-Host "[DEBUG] GET ${uri}"
+          }
+          try {
+            Invoke-WebRequest -Method "Get" -Uri ${uri} -OutFile ${outfile}
+          }
+          catch {
+            Write-Host "[ERROR] GET ${uri}:"
+            Write-Host $_
+            exit
+          }
+          Invoke-Expression -Command ((Join-Path -Path ${root} -ChildPath "python.exe") + " " + ${outfile})
+          Remove-Item -Force -Path ${outfile}
         }
       }
       ${TOOLS}[5] {
@@ -850,6 +857,7 @@ switch (${args}[0]) {
       ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[2] -ChildPath "bin")))
       ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[3] -ChildPath "bin")))
       ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[4]))
+      ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[4] -ChildPath "Scripts")))
       ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath ${TOOLS}[5]))
       ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[6] -ChildPath "bin")))
       ${Env:Path} += (";" + (Join-Path -Path ${PS1_HOME} -ChildPath (Join-Path -Path ${TOOLS}[7] -ChildPath "bin")))
